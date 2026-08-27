@@ -19,3 +19,13 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Completely suppress Next.js dev indicators/badges in corner */
+nextjs-portal,
+#nextjs-dev-overlay,
+[data-nextjs-dev-tools],
+[data-nextjs-toast],
+[data-nextjs-route-announcer] {
+  display: none !important;
+}
+
