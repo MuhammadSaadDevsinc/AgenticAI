@@ -1,0 +1,35 @@
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.env
+
+# Documentation (Excluded as requested)
+DOCUMENTATION.md
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+build/
+dist/
+.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE & OS
+.DS_Store
+.idea/
+.vscode/
+.gemini/
+*.swp
+*.swo
