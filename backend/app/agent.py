@@ -30,6 +30,7 @@ Available Tools:
 
 Strict Rules & Policies:
 - WHEN TO SEARCH: Only call `tavily_search` if the question genuinely requires live/current data you cannot answer from your own training. For general knowledge, fiction, creative content, or explanations — answer directly WITHOUT searching.
+- WEB SEARCH FALLBACK: If `tavily_search` is disabled, unavailable, or fails, use your own internal knowledge to provide the best possible answer, and clearly state at the top of your response that deep research could not be performed because web search was unavailable or disabled.
 - WHEN TO USE SLACK: ONLY invoke `slack_post_message` if the user's message EXPLICITLY contains words like: send, message, text, notify, tell, inform Mohsin / Slack. If not mentioned, never call it.
 - DESIGNATED SLACK RECIPIENT: When Slack is requested, ONLY text Mohsin Ali (Member ID: {DESIGNATED_CHANNEL_ID}). Do NOT message anyone else.
 - NO EMAIL / GMAIL: Do not create or offer email capabilities.
@@ -222,7 +223,8 @@ async def execute_agent_loop(request: ChatRequest) -> ChatResponse:
                         tool_rec.error_message = "Web search is disabled by the user."
                         tool_records.append(tool_rec)
                         tool_output_str = json.dumps({
-                            "error": "Web search is currently disabled. Answer from your own knowledge instead."
+                            "error": "Web search is currently disabled by the user. Deep research could not be performed.",
+                            "instruction": "Answer the inquiry using your own internal knowledge. Explicitly state at the top of your response that deep research could not be performed because web search was disabled."
                         })
                         groq_messages.append({
                             "role": "tool",
@@ -265,7 +267,7 @@ async def execute_agent_loop(request: ChatRequest) -> ChatResponse:
                             details={"depth": request.search_depth},
                             timestamp=time.time()
                         ))
-                        
+
                         search_res = await search_tavily(
                             query=search_query,
                             search_depth=request.search_depth,
@@ -273,31 +275,53 @@ async def execute_agent_loop(request: ChatRequest) -> ChatResponse:
                             api_key=settings.TAVILY_API_KEY
                         )
 
-                        all_sources.extend(search_res.results)
                         duration = (time.time() - tool_start) * 1000
-                        tool_rec.status = "success"
-                        tool_rec.result = {
-                            "count": len(search_res.results),
-                            "answer": search_res.answer,
-                            "is_mock": search_res.is_mock,
-                            "results": [r.model_dump() for r in search_res.results]
-                        }
-                        tool_rec.execution_time_ms = duration
-                        tool_records.append(tool_rec)
 
-                        steps.append(AgentStepEvent(
-                            step_id=str(uuid.uuid4()),
-                            step_type="tool_completed",
-                            message=f"Retrieved {len(search_res.results)} research sources in {duration:.0f}ms.",
-                            details={"sources_count": len(search_res.results)},
-                            timestamp=time.time()
-                        ))
+                        if search_res.error or len(search_res.results) == 0:
+                            err_msg = search_res.error or "No web search results returned."
+                            tool_rec.status = "error"
+                            tool_rec.error_message = err_msg
+                            tool_rec.result = {"error": err_msg, "count": 0}
+                            tool_rec.execution_time_ms = duration
+                            tool_records.append(tool_rec)
 
-                        tool_output_str = json.dumps({
-                            "query": search_query,
-                            "answer": search_res.answer,
-                            "results": [r.model_dump() for r in search_res.results]
-                        }, ensure_ascii=False)
+                            steps.append(AgentStepEvent(
+                                step_id=str(uuid.uuid4()),
+                                step_type="tool_completed",
+                                message="Web search unavailable. Falling back to internal intelligence.",
+                                details={"error": err_msg},
+                                timestamp=time.time()
+                            ))
+
+                            tool_output_str = json.dumps({
+                                "query": search_query,
+                                "error": err_msg,
+                                "instruction": "Web search is unavailable. Answer using your own internal knowledge, and explicitly mention at the top of your response that deep research could not be performed because web search was unavailable or not working."
+                            }, ensure_ascii=False)
+                        else:
+                            all_sources.extend(search_res.results)
+                            tool_rec.status = "success"
+                            tool_rec.result = {
+                                "count": len(search_res.results),
+                                "answer": search_res.answer,
+                                "results": [r.model_dump() for r in search_res.results]
+                            }
+                            tool_rec.execution_time_ms = duration
+                            tool_records.append(tool_rec)
+
+                            steps.append(AgentStepEvent(
+                                step_id=str(uuid.uuid4()),
+                                step_type="tool_completed",
+                                message=f"Retrieved {len(search_res.results)} research sources in {duration:.0f}ms.",
+                                details={"sources_count": len(search_res.results)},
+                                timestamp=time.time()
+                            ))
+
+                            tool_output_str = json.dumps({
+                                "query": search_query,
+                                "answer": search_res.answer,
+                                "results": [r.model_dump() for r in search_res.results]
+                            }, ensure_ascii=False)
 
                     elif fn_name == "slack_post_message":
                         msg_text = fn_args.get("message", "")

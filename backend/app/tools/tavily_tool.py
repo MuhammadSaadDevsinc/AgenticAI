@@ -42,13 +42,17 @@ async def search_tavily(
 ) -> SearchResponse:
     """
     Search the web using Tavily API.
-    Gracefully falls back if API key is invalid or rate limited.
+    Returns real search results or reports error without fake fallback data.
     """
     active_key = api_key or settings.TAVILY_API_KEY
     
     if not active_key or active_key.strip() == "":
-        logger.warning("No Tavily API key provided. Using fallback search simulator.")
-        return _generate_fallback_results(query, max_results, reason="Tavily API key not configured. Showing demonstration results.")
+        logger.warning("No Tavily API key provided.")
+        return SearchResponse(
+            query=query,
+            results=[],
+            error="Tavily API key is not configured. Deep web research could not be performed."
+        )
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -83,48 +87,37 @@ async def search_tavily(
                 )
             elif response.status_code == 429:
                 logger.warning("Tavily API rate limit reached.")
-                return _generate_fallback_results(query, max_results, reason="Tavily API rate limit reached. Displaying contextual fallback results.")
-            elif response.status_code == 401 or response.status_code == 403:
+                return SearchResponse(
+                    query=query,
+                    results=[],
+                    error="Tavily API rate limit reached. Deep web research could not be performed."
+                )
+            elif response.status_code in [401, 403]:
                 logger.warning(f"Tavily API auth error: {response.status_code}")
-                return _generate_fallback_results(query, max_results, reason=f"Tavily API authentication failed ({response.status_code}). Please verify your Tavily API key.")
+                return SearchResponse(
+                    query=query,
+                    results=[],
+                    error=f"Tavily API authentication failed ({response.status_code}). Deep web research could not be performed."
+                )
             else:
                 logger.error(f"Tavily API returned status {response.status_code}: {response.text}")
-                return _generate_fallback_results(query, max_results, reason=f"Tavily API error ({response.status_code}). Fallback activated.")
+                return SearchResponse(
+                    query=query,
+                    results=[],
+                    error=f"Tavily API error ({response.status_code}). Deep web research could not be performed."
+                )
                 
     except httpx.RequestError as exc:
         logger.error(f"Network error querying Tavily API: {exc}")
-        return _generate_fallback_results(query, max_results, reason=f"Network error connecting to Tavily: {str(exc)}")
+        return SearchResponse(
+            query=query,
+            results=[],
+            error=f"Network error connecting to Tavily: {str(exc)}. Deep web research could not be performed."
+        )
     except Exception as e:
         logger.error(f"Unexpected error in search_tavily: {e}")
-        return _generate_fallback_results(query, max_results, reason=f"Unexpected error: {str(e)}")
-
-def _generate_fallback_results(query: str, max_results: int, reason: str = "") -> SearchResponse:
-    """Generate realistic demonstration search results when API is unavailable."""
-    fallback_items = [
-        SearchResultItem(
-            title=f"Comprehensive Overview & Analysis: {query.title()}",
-            url="https://tech-research.org/papers/2026/analysis",
-            content=f"Recent research regarding '{query}' indicates significant developments in efficiency, scalability, and practical adoption across multiple industry sectors in 2026.",
-            score=0.96
-        ),
-        SearchResultItem(
-            title=f"State of the Art Benchmarks & Technical Deep Dive: {query.title()}",
-            url="https://arxiv.org/abs/2603.research-update",
-            content=f"Experimental metrics and field reports highlight that modern architectures and methods for '{query}' achieve over 40% performance improvements compared to prior baseline models.",
-            score=0.91
-        ),
-        SearchResultItem(
-            title=f"Industry Implementation Guide and Standards: {query.title()}",
-            url="https://engineering.guide/standards/latest",
-            content=f"Best practices recommend rigorous validation, modular component isolation, and automated telemetry when deploying systems focused on {query}.",
-            score=0.88
+        return SearchResponse(
+            query=query,
+            results=[],
+            error=f"Unexpected search error: {str(e)}. Deep web research could not be performed."
         )
-    ]
-    
-    return SearchResponse(
-        query=query,
-        results=fallback_items[:max_results],
-        answer=f"Synthesized preliminary findings for '{query}' demonstrate rapid evolution and key performance milestones across modern research benchmarks.",
-        is_mock=True,
-        error=reason if reason else None
-    )
